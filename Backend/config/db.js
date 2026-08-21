@@ -25,14 +25,14 @@ const connectDB = async () => {
   cachedPromise = (async () => {
     let primaryUri = process.env.MONGO_URI || 'mongodb+srv://krbittu803110_db_user:dPU9R7yWn6z813GU@cluster0.j2vupm7.mongodb.net/india';
     if (!primaryUri.includes('serverSelectionTimeoutMS')) {
-      primaryUri += (primaryUri.includes('?') ? '&' : '?') + 'serverSelectionTimeoutMS=2500&connectTimeoutMS=2500';
+      primaryUri += (primaryUri.includes('?') ? '&' : '?') + 'serverSelectionTimeoutMS=10000&connectTimeoutMS=10000';
     }
 
     const connectionOpts = {
-      serverSelectionTimeoutMS: 2500,
-      connectTimeoutMS: 2500,
-      socketTimeoutMS: 2500,
-      maxPoolSize: 5,
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
+      socketTimeoutMS: 10000,
+      maxPoolSize: 10,
       minPoolSize: 0
     };
 

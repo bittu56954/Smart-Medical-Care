@@ -58,13 +58,6 @@ app.use(async (req, res, next) => {
     console.error('[MEDISCAN DB REQUEST MIDDLEWARE ERR]', err.message);
   }
 
-  if (mongoose.connection.readyState !== 1) {
-    return res.status(503).json({
-      success: false,
-      message: 'Database connection currently unavailable. Please verify your MongoDB Atlas connection string (MONGO_URI) and Network IP Access.'
-    });
-  }
-
   next();
 });
 
