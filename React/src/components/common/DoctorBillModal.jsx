@@ -459,6 +459,51 @@ const DoctorBillModal = ({
               </div>
             </div>
 
+            {/* PRESCRIBED REQUIRED MEDICINES (BILINGUAL) */}
+            {scanData?.requiredMedicines && scanData.requiredMedicines.length > 0 && (
+              <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', background: '#f0f9ff', padding: '0.6rem 1rem', borderRadius: '10px', borderLeft: '4px solid #0284c7' }}>
+                  <Pill size={18} color="#0284c7" />
+                  <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0369a1', margin: 0, textTransform: 'uppercase' }}>
+                    3. PRESCRIBED REQUIRED MEDICINES / आवश्यक दवाइयां (BILINGUAL RX)
+                  </h3>
+                </div>
+
+                <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '1rem' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f1f5f9', color: '#475569', textAlign: 'left', fontWeight: 700 }}>
+                        <th style={{ padding: '0.5rem 0.75rem', borderRadius: '6px 0 0 6px' }}>#</th>
+                        <th style={{ padding: '0.5rem 0.75rem' }}>Required Medicine (English & Hindi)</th>
+                        <th style={{ padding: '0.5rem 0.75rem' }}>Dosage & Instruction / खुराक</th>
+                        <th style={{ padding: '0.5rem 0.75rem', borderRadius: '0 6px 6px 0' }}>PM Jan Aushadhi Savings</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scanData.requiredMedicines.map((med, mIdx) => (
+                        <tr key={mIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700 }}>{mIdx + 1}</td>
+                          <td style={{ padding: '0.6rem 0.75rem' }}>
+                            <strong style={{ color: '#0284c7', display: 'block' }}>{med.nameEn}</strong>
+                            <span style={{ color: '#0f172a', fontWeight: 700, fontSize: '0.82rem' }}>🇮🇳 {med.nameHi}</span>
+                          </td>
+                          <td style={{ padding: '0.6rem 0.75rem' }}>
+                            <div style={{ color: '#0f172a', fontWeight: 600, fontSize: '0.82rem' }}>🇬🇧 {med.dosageEn}</div>
+                            <div style={{ color: '#059669', fontWeight: 600, fontSize: '0.82rem' }}>🇮🇳 {med.dosageHi}</div>
+                          </td>
+                          <td style={{ padding: '0.6rem 0.75rem' }}>
+                            <span style={{ background: '#ecfdf5', color: '#059669', padding: '0.2rem 0.5rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700 }}>
+                              {med.janAushadhi}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* OFFICIAL AUTHORIZED MEDICAL BOARD SIGNATURE & CERTIFICATION STAMP */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: '2px solid #cbd5e1', paddingTop: '1.25rem', marginTop: '1.5rem' }}>
               <div style={{ fontSize: '0.76rem', color: '#64748b', maxWidth: '420px', lineHeight: 1.5 }}>

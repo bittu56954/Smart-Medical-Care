@@ -4,6 +4,7 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import mongoose from 'mongoose';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -109,6 +110,10 @@ app.use((err, req, res, next) => {
 const PORT = parseInt(process.env.PORT || '5001', 10);
 
 if (!process.env.VERCEL) {
+  connectDB().catch((err) => {
+    console.warn('[MEDISCAN INITIAL DB CONNECT WARN]', err.message);
+  });
+
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n========================================================`);
     console.log(` [MEDISCAN SERVER] Running on http://127.0.0.1:${PORT}`);

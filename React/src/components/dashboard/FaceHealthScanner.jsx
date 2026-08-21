@@ -18,7 +18,8 @@ import {
   Zap,
   UserCheck,
   Eye,
-  Smile
+  Smile,
+  Pill
 } from 'lucide-react';
 import { faceScanService } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
@@ -179,15 +180,15 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
     stopCamera();
   };
 
-  // Aadhaar Biometric Human Face & Open Eyes Validation Engine
+  // Aadhaar Biometric Human Face & Both Eyes Open Validation Engine
   const validateAndDetectHumanFace = (imageSrc) => {
     return new Promise((resolve) => {
       if (selectedPresetId) {
-        return resolve({ isFace: true, areEyesOpen: true, confidence: 99.4, reason: 'Preset human facial image validated.' });
+        return resolve({ isFace: true, areBothEyesVisible: true, confidence: 99.4, reason: 'Preset human facial image validated.' });
       }
 
       if (!imageSrc) {
-        return resolve({ isFace: false, areEyesOpen: false, confidence: 0, reason: 'No image target provided.' });
+        return resolve({ isFace: false, areBothEyesVisible: false, confidence: 0, reason: 'No image target provided.' });
       }
 
       const img = new Image();
@@ -205,6 +206,7 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
           const imgData = ctx.getImageData(0, 0, width, height).data;
           let skinPixelCount = 0;
           let totalCenterPixels = 0;
+          let totalLumSum = 0;
 
           // Define Central Facial Region (x: 20%-80%, y: 15%-85%)
           const xStart = Math.floor(width * 0.2);
@@ -212,9 +214,15 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
           const yStart = Math.floor(height * 0.15);
           const yEnd = Math.floor(height * 0.85);
 
-          let eyeZoneSkinPixels = 0;
-          let eyeZoneTotalPixels = 0;
-          let eyeDarkPupilPixels = 0;
+          // Left Eye sampling (y: 20%-40%, x: 22%-44%)
+          let leftEyeSkinPixels = 0;
+          let leftEyeTotalPixels = 0;
+          let leftEyeDarkPixels = 0;
+
+          // Right Eye sampling (y: 20%-40%, x: 56%-78%)
+          let rightEyeSkinPixels = 0;
+          let rightEyeTotalPixels = 0;
+          let rightEyeDarkPixels = 0;
 
           let eyeZoneLumSum = 0;
           let cheekZoneLumSum = 0;
@@ -229,6 +237,7 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
               const lum = 0.299 * r + 0.587 * g + 0.114 * b;
 
               totalCenterPixels++;
+              totalLumSum += lum;
 
               // Human Skin Color Bounds in RGB & YCbCr
               const isSkinRGB = r > 45 && g > 25 && b > 15 && r > g && r > b && (r - g) >= 10;
@@ -240,19 +249,20 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
                 skinPixelCount++;
               }
 
-              // Eye Zone Sampling (y: 22%-42%, Left Eye x: 22%-44%, Right Eye x: 56%-78%)
-              const isEyeZone = (y >= height * 0.22 && y <= height * 0.42) &&
-                                ((x >= width * 0.22 && x <= width * 0.44) || (x >= width * 0.56 && x <= width * 0.78));
-
-              if (isEyeZone) {
-                eyeZoneTotalPixels++;
+              // Left Eye Zone (y: 20%-40%, x: 22%-44%)
+              if (y >= height * 0.20 && y <= height * 0.40 && x >= width * 0.22 && x <= width * 0.44) {
+                leftEyeTotalPixels++;
                 eyeZoneLumSum += lum;
-                if (isSkinRGB && isSkinYCbCr) {
-                  eyeZoneSkinPixels++;
-                }
-                if (lum < 80) {
-                  eyeDarkPupilPixels++;
-                }
+                if (isSkinRGB && isSkinYCbCr) leftEyeSkinPixels++;
+                if (lum < 85) leftEyeDarkPixels++;
+              }
+
+              // Right Eye Zone (y: 20%-40%, x: 56%-78%)
+              if (y >= height * 0.20 && y <= height * 0.40 && x >= width * 0.56 && x <= width * 0.78) {
+                rightEyeTotalPixels++;
+                eyeZoneLumSum += lum;
+                if (isSkinRGB && isSkinYCbCr) rightEyeSkinPixels++;
+                if (lum < 85) rightEyeDarkPixels++;
               }
 
               // Cheek Zone Sampling (y: 46%-65%)
@@ -263,53 +273,62 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
             }
           }
 
+          const avgImageLum = totalLumSum / (totalCenterPixels || 1);
           const skinRatio = skinPixelCount / (totalCenterPixels || 1);
-          const avgEyeLum = eyeZoneLumSum / (eyeZoneTotalPixels || 1);
+          const avgEyeLum = eyeZoneLumSum / ((leftEyeTotalPixels + rightEyeTotalPixels) || 1);
           const avgCheekLum = cheekZoneLumSum / (cheekZonePixels || 1);
           const landmarkContrastRatio = Math.abs(avgCheekLum - avgEyeLum);
 
-          // Rule 1: Human Face Detection
-          const isValidFace = skinRatio >= 0.18 && skinRatio <= 0.95 && landmarkContrastRatio >= 3.5;
+          // Rule 1: Overall Image Lighting & Clarity Check
+          const isLightingClear = avgImageLum >= 30 && avgImageLum <= 235;
+
+          // Rule 2: Human Face Bounds Check
+          const isValidFace = isLightingClear && skinRatio >= 0.18 && skinRatio <= 0.92 && landmarkContrastRatio >= 3.0;
 
           if (!isValidFace) {
             return resolve({
               isFace: false,
-              areEyesOpen: false,
+              areBothEyesVisible: false,
               confidence: Math.round(skinRatio * 100),
-              reason: 'Non-face image detected. Only genuine human facial scans are authorized.'
+              reason: 'Face is not clear. Please position your face properly.'
             });
           }
 
-          // Rule 2: Open Eyes Check (Aankh Khula Rahna Chahiye)
-          // Eyelids closed -> eyeZone is > 84% skin tone pixels and < 3.5% dark pupil/iris contrast
-          const eyeSkinRatio = eyeZoneSkinPixels / (eyeZoneTotalPixels || 1);
-          const eyePupilRatio = eyeDarkPupilPixels / (eyeZoneTotalPixels || 1);
-          const areEyesOpen = eyeSkinRatio < 0.84 || eyePupilRatio >= 0.035;
+          // Rule 3: Both Eyes Clearly Visible & Open Check
+          const leftEyeSkinRatio = leftEyeSkinPixels / (leftEyeTotalPixels || 1);
+          const leftEyeDarkRatio = leftEyeDarkPixels / (leftEyeTotalPixels || 1);
+          const isLeftEyeVisible = leftEyeSkinRatio < 0.88 || leftEyeDarkRatio >= 0.025;
 
-          if (!areEyesOpen) {
+          const rightEyeSkinRatio = rightEyeSkinPixels / (rightEyeTotalPixels || 1);
+          const rightEyeDarkRatio = rightEyeDarkPixels / (rightEyeTotalPixels || 1);
+          const isRightEyeVisible = rightEyeSkinRatio < 0.88 || rightEyeDarkRatio >= 0.025;
+
+          const areBothEyesVisible = isLeftEyeVisible && isRightEyeVisible;
+
+          if (!areBothEyesVisible) {
             return resolve({
               isFace: true,
-              areEyesOpen: false,
-              confidence: 96.0,
-              reason: '👁️ EYES CLOSED DETECTED: Face scan requires OPEN EYES (Aankh Khula Rahna Chahiye) just like Aadhaar/Passport biometric verification. Please open your eyes clearly.'
+              areBothEyesVisible: false,
+              confidence: 90.0,
+              reason: 'Face is not clear. Please position your face properly. Both eyes must be clearly visible and open.'
             });
           }
 
           const faceConf = Math.min(99.6, Math.round(88 + skinRatio * 18));
           resolve({
             isFace: true,
-            areEyesOpen: true,
+            areBothEyesVisible: true,
             confidence: faceConf,
             skinRatio,
             landmarkContrastRatio,
-            reason: 'Human face biometrically validated with open eyes.'
+            reason: 'Human face biometrically validated with both eyes clearly visible.'
           });
         } catch (err) {
-          resolve({ isFace: true, areEyesOpen: true, confidence: 95.0, reason: 'Face validation completed.' });
+          resolve({ isFace: true, areBothEyesVisible: true, confidence: 95.0, reason: 'Face validation completed.' });
         }
       };
       img.onerror = () => {
-        resolve({ isFace: false, areEyesOpen: false, confidence: 0, reason: 'Failed to load image for face scan.' });
+        resolve({ isFace: false, areBothEyesVisible: false, confidence: 0, reason: 'Face is not clear. Please position your face properly.' });
       };
       img.src = imageSrc;
     });
@@ -391,11 +410,11 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
           if (yellowIndex > 1.18) {
             const conf = Math.min(97, Math.round(75 + yellowIndex * 15));
             detectedConditionsList.push({
-              name: 'Hyperbilirubinemia / Jaundice',
+              name: 'Hyperbilirubinemia / Jaundice (पीलिया / जॉन्डिस)',
               probability: conf,
               severity: 'High',
               type: 'jaundice',
-              description: 'Yellowish ocular sclera discoloration indicating elevated serum bilirubin levels.'
+              description: 'Yellowish ocular sclera discoloration indicating elevated serum bilirubin levels. / आंखों के सफेद भाग और त्वचा में पीलापन।'
             });
             if (conf > maxConfidence) { primaryType = 'jaundice'; maxConfidence = conf; }
           }
@@ -403,11 +422,11 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
           if (lipRedPerfusion < 0.62) {
             const conf = Math.min(95, Math.round(80 + (0.62 - lipRedPerfusion) * 50));
             detectedConditionsList.push({
-              name: 'Iron-Deficiency Anemia',
+              name: 'Iron-Deficiency Anemia / आयरन की कमी से एनीमिया (रक्तअल्पता)',
               probability: conf,
               severity: 'Moderate',
               type: 'anemia',
-              description: 'Pale lip mucosa and reduced blood perfusion indicating low hemoglobin.'
+              description: 'Pale lip mucosa and reduced blood perfusion indicating low hemoglobin. / होंठों और पलकों में हीमोग्लोबिन की कमी से पीलापन।'
             });
             if (primaryType === 'healthy' || conf > maxConfidence) { primaryType = 'anemia'; maxConfidence = conf; }
           }
@@ -415,11 +434,11 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
           if (cheekFlushRatio > 1.32) {
             const conf = Math.min(94, Math.round(78 + cheekFlushRatio * 10));
             detectedConditionsList.push({
-              name: 'Facial Erythema / Rash (Cheek Redness)',
+              name: 'Facial Rosacea & Erythema / चेहरे का लालपन और सूजन (एरिथेमा)',
               probability: conf,
               severity: 'Moderate',
               type: 'erythema',
-              description: 'Vascular dermal flush and localized redness pattern across cheek tissues.'
+              description: 'Vascular dermal flush and localized redness pattern across cheek tissues. / गालों में सूजन व अत्यधिक लालिमा।'
             });
             if (primaryType === 'healthy' || conf > maxConfidence) { primaryType = 'erythema'; maxConfidence = conf; }
           }
@@ -427,34 +446,34 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
           if (darkCircleRatio < 0.76) {
             const conf = Math.min(92, Math.round(82 + (0.76 - darkCircleRatio) * 35));
             detectedConditionsList.push({
-              name: 'Chronic Fatigue / Dark Circles',
+              name: 'Chronic Fatigue & Sleep Deprivation / अत्यधिक थकान और नींद की कमी (डार्क सर्कल्स)',
               probability: conf,
               severity: 'Low-Moderate',
               type: 'fatigue',
-              description: 'Periorbital hyperpigmentation and under-eye shadow contrast from sleep debt.'
+              description: 'Periorbital hyperpigmentation and under-eye shadow contrast from sleep debt. / आंखों के नीचे काले घेरे और सुस्ती।'
             });
             if (primaryType === 'healthy') { primaryType = 'fatigue'; maxConfidence = conf; }
           }
 
           // Factor user observation input if explicitly provided
           if (obs?.primarySymptom === 'yellow' && !detectedConditionsList.some(d => d.type === 'jaundice')) {
-            detectedConditionsList.push({ name: 'Hyperbilirubinemia / Jaundice', probability: 90, severity: 'High', type: 'jaundice', description: 'Patient observed yellowing eyes/skin.' });
+            detectedConditionsList.push({ name: 'Hyperbilirubinemia / Jaundice (पीलिया / जॉन्डिस)', probability: 90, severity: 'High', type: 'jaundice', description: 'Patient observed yellowing eyes/skin. / आंखों में पीलापन देखा गया।' });
             primaryType = 'jaundice';
           } else if (obs?.primarySymptom === 'pale' && !detectedConditionsList.some(d => d.type === 'anemia')) {
-            detectedConditionsList.push({ name: 'Iron-Deficiency Anemia', probability: 88, severity: 'Moderate', type: 'anemia', description: 'Patient observed pale skin/lips.' });
+            detectedConditionsList.push({ name: 'Iron-Deficiency Anemia / आयरन की कमी (रक्तअल्पता)', probability: 88, severity: 'Moderate', type: 'anemia', description: 'Patient observed pale skin/lips. / त्वचा और होंठों में पीलापन।' });
             primaryType = 'anemia';
           } else if (obs?.primarySymptom === 'redness' && !detectedConditionsList.some(d => d.type === 'erythema')) {
-            detectedConditionsList.push({ name: 'Facial Erythema / Rash', probability: 85, severity: 'Moderate', type: 'erythema', description: 'Patient observed cheek redness.' });
+            detectedConditionsList.push({ name: 'Facial Rosacea & Erythema / चेहरे का लालपन (एरिथेमा)', probability: 85, severity: 'Moderate', type: 'erythema', description: 'Patient observed cheek redness. / गालों में लालपन देखा गया।' });
             primaryType = 'erythema';
           }
 
           if (detectedConditionsList.length === 0) {
             detectedConditionsList.push({
-              name: 'No Disease Detected (Completely Fit)',
+              name: 'No Disease Detected (Completely Fit) / कोई बीमारी नहीं पाई गई (पूर्णतः स्वस्थ)',
               probability: 99,
               severity: 'None',
               type: 'healthy',
-              description: 'All facial biometrics fall within normal clinical ranges.'
+              description: 'All facial biometrics fall within normal clinical ranges. / सभी बायोमेट्रिक्स पूर्णतः सामान्य हैं।'
             });
           }
 
@@ -491,37 +510,36 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
 
     setFaceValidationError('');
     setFaceConfidenceScore(null);
-    setIsScanning(true);
-    setScanProgress(10);
-    setScanStepMessage('🔍 Aadhaar Biometric Face Verification in progress...');
-    setScanResult(null);
 
-    // STEP 1: Strict Aadhaar Face & Open Eye Verification Check
+    // STEP 1: Strict Aadhaar Face & Open Eye Verification Check BEFORE SCAN STARTS
     const faceCheck = await validateAndDetectHumanFace(activeImage || previewUrl);
 
     if (!faceCheck.isFace) {
-      setIsScanning(false);
       setFaceValidationError(
-        '🚫 FACE REJECTED: Non-Face image detected. Only genuine human facial scans are authorized. Body parts (hands, legs, elbows), clothes, or non-face objects are strictly prohibited.'
+        '⚠️ Face is not clear. Position your face properly inside the reticle. The scan will NOT start until your face and both eyes are clearly visible.'
       );
-      if (showToast) showToast('Face Verification Failed: Only human face scanning is permitted!', 'error');
-      return;
+      if (showToast) showToast('⚠️ Scan Cannot Start: Face is not clear. Position your face properly.', 'error');
+      return; // DO NOT START SCANNING!
     }
 
-    if (!faceCheck.areEyesOpen) {
-      setIsScanning(false);
+    if (!faceCheck.areBothEyesVisible) {
       setFaceValidationError(
-        '👁️ EYES CLOSED DETECTED: Face scan requires OPEN EYES (Aankh Khula Rahna Chahiye) for ocular & sclera disease diagnosis (Aadhaar Biometric Rule). Please open your eyes clearly and face the camera.'
+        '⚠️ Scan Cannot Start: Face is not clear. Both eyes must be clearly visible and open before the scan can start.'
       );
-      if (showToast) showToast('Eye Openness Failed: Please open your eyes clearly!', 'error');
-      return;
+      if (showToast) showToast('⚠️ Scan Cannot Start: Both eyes must be clearly visible and open.', 'error');
+      return; // DO NOT START SCANNING!
     }
 
+    // FACE & BOTH EYES VERIFIED! NOW START SCAN EXECUTION & ANIMATION
+    setIsScanning(true);
+    setScanProgress(10);
+    setScanStepMessage('🔍 Aadhaar Biometric Face & Open Eyes Verified! Analyzing facial vital parameters...');
+    setScanResult(null);
     setFaceConfidenceScore(faceCheck.confidence);
 
     // Biometric Scanning Progress Steps
     const steps = [
-      { progress: 25, msg: `🟢 Human Face Verified & Eyes Open (${faceCheck.confidence}% Match)...` },
+      { progress: 25, msg: `🟢 Human Face & Both Eyes Verified (${faceCheck.confidence}% Match)...` },
       { progress: 45, msg: 'Extracting ocular sclera colorimetry & yellowing index...' },
       { progress: 65, msg: 'Measuring lip vascular mucosal oxygenation & perfusion...' },
       { progress: 85, msg: 'Scanning cheek dermal pigment & periorbital shadow...' },
@@ -572,12 +590,23 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
       report = {
         isCompletelyHealthy: true,
         healthScore: 98,
-        statusTitle: 'COMPLETELY HEALTHY & FIT ✅',
+        statusTitle: 'COMPLETELY HEALTHY & FIT / पूर्णतः स्वस्थ एवं निरोग ✅',
         statusBadgeColor: '#059669',
         statusBgColor: '#ecfdf5',
         doctorSummary: 'Physician Assessment: The facial scan demonstrates excellent vital biomarkers. Non-icteric clear white sclera, healthy pink mucosal tissue perfusion, symmetrical facial tone, optimal dermal hydration, and zero inflammatory or edema signs. Patient appears in peak physiological condition.',
         suspectedDiseases: [
-          { name: 'No Disease Detected', probability: 99, severity: 'None', description: 'All facial biometrics fall within normal clinical ranges.' }
+          { name: 'No Disease Detected (Completely Fit) / कोई बीमारी नहीं पाई गई (पूर्णतः स्वस्थ)', probability: 99, severity: 'None', description: 'All facial biometrics fall within normal clinical ranges. / सभी चेहरे के बायोमेट्रिक्स सामान्य नैदानिक सीमाओं के भीतर हैं।' }
+        ],
+        requiredMedicines: [
+          {
+            nameEn: 'PM Jan Aushadhi Daily Multivitamin & Minerals',
+            nameHi: 'जन औषधि दैनिक मल्टीविटामिन एवं मिनरल टैबलेट',
+            dosageEn: '1 tablet daily after breakfast for daily wellness',
+            dosageHi: 'प्रतिदिन सुबह नाश्ते के बाद 1 गोली लेवे',
+            purposeEn: 'Maintains optimal organ health, dermal turgor, and daily immune defense.',
+            purposeHi: 'सामान्य स्वास्थ्य, ऊर्जा और रोग प्रतिरोधक क्षमता (Immunity) बनाए रखती है।',
+            janAushadhi: 'PM Jan Aushadhi Multivitamin (₹10 / 10 tab vs Branded ₹110)'
+          }
         ],
         biomarkers: [
           { category: 'Sclera & Eye Clarity', status: 'Clear & Non-Icteric', score: '100/100', icon: 'eye', ok: true },
@@ -600,13 +629,33 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
       report = {
         isCompletelyHealthy: false,
         healthScore: 71,
-        statusTitle: 'POTENTIAL ISSUE: PALE TISSUE / ANEMIA INDICATIONS ⚠️',
+        statusTitle: 'POTENTIAL ISSUE: PALE TISSUE / ANEMIA INDICATIONS ⚠️ (आयरन की कमी से एनीमिया / रक्तअल्पता)',
         statusBadgeColor: '#d97706',
         statusBgColor: '#fffbeb',
         doctorSummary: 'Physician Assessment: Facial tissue paleness detected along lip mucosa and conjunctival under-perfusion. This indicates reduced hemoglobin concentration or micro-vascular underperfusion, characteristic of mild to moderate iron deficiency anemia or fatigue-induced vasoconstriction.',
         suspectedDiseases: [
-          { name: 'Iron-Deficiency Anemia', probability: 87, severity: 'Moderate', description: 'Low red blood cell count or low hemoglobin affecting facial mucous membrane color.' },
-          { name: 'Micro-Vascular Hypoxia', probability: 64, severity: 'Low', description: 'Temporary skin vasoconstriction due to stress or cold exposure.' }
+          { name: 'Iron-Deficiency Anemia / आयरन की कमी से एनीमिया (रक्तअल्पता)', probability: 87, severity: 'Moderate', description: 'Low red blood cell count or low hemoglobin affecting facial mucous membrane color. / लाल रक्त कोशिकाओं या हीमोग्लोबिन की कमी से होंठ और आंखों में पीलापन।' },
+          { name: 'Micro-Vascular Hypoxia / सूक्ष्म-संवहनी ऑक्सीजन की कमी', probability: 64, severity: 'Low', description: 'Temporary skin vasoconstriction due to stress or cold exposure. / तनाव या ठंड के कारण त्वचा में रक्त प्रवाह की कमी।' }
+        ],
+        requiredMedicines: [
+          {
+            nameEn: 'Ferrous Ascorbate (100mg) + Folic Acid (1.5mg)',
+            nameHi: 'फेरस एस्कॉर्बेट (100mg) + फॉलिक एसिड (1.5mg) टैबलेट',
+            dosageEn: '1 tablet daily after lunch with fresh water',
+            dosageHi: 'रोजाना दोपहर खाने के बाद 1 गोली पानी के साथ लेवे',
+            purposeEn: 'Increases Hemoglobin count & stimulates Red Blood Cell (RBC) synthesis.',
+            purposeHi: 'हीमोग्लोबिन की मात्रा बढ़ाती है तथा लाल रक्त कोशिकाओं (RBC) का निर्माण करती है।',
+            janAushadhi: 'PM Jan Aushadhi Ferrous Ascorbate (₹12 / 10 tab vs Branded ₹140)'
+          },
+          {
+            nameEn: 'Vitamin C / Ascorbic Acid (500mg)',
+            nameHi: 'विटामिन सी / एस्कॉर्बिक एसिड (500mg) टैबलेट',
+            dosageEn: '1 tablet daily along with iron supplement',
+            dosageHi: 'रोजाना 1 गोली आयरन दवा के साथ लेवे',
+            purposeEn: 'Enhances dietary & supplemental iron absorption in the intestinal tract.',
+            purposeHi: 'आंतों में आयरन के अवशोषण (Absorption) को कई गुना बढ़ाती है।',
+            janAushadhi: 'PM Jan Aushadhi Vitamin C 500mg (₹10 / 10 tab vs Branded ₹110)'
+          }
         ],
         biomarkers: [
           { category: 'Sclera & Eye Clarity', status: 'Slightly Pale Conjunctiva', score: '72/100', icon: 'eye', ok: false },
@@ -629,13 +678,33 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
       report = {
         isCompletelyHealthy: false,
         healthScore: 62,
-        statusTitle: 'ATTENTION: SCLERAL ICTERUS / HEPATIC STRESS ALERT 🚨',
+        statusTitle: 'ATTENTION: SCLERAL ICTERUS / HEPATIC STRESS ALERT 🚨 (पीलिया / जॉन्डिस - उच्च बिलिरुबिन)',
         statusBadgeColor: '#dc2626',
         statusBgColor: '#fef2f2',
         doctorSummary: 'Physician Assessment: Yellowish discoloration (icterus) detected in the ocular sclera region and surrounding facial tissue. This is a key clinical sign of elevated serum bilirubin levels, which may indicate hepatic workload, gallbladder obstruction, or hemolysis.',
         suspectedDiseases: [
-          { name: 'Hyperbilirubinemia / Jaundice', probability: 91, severity: 'High', description: 'Accumulation of bilirubin in blood causing sclera and skin yellowing.' },
-          { name: 'Hepatic Stress / Biliary Stasis', probability: 78, severity: 'Moderate', description: 'Sluggish liver processing or bile duct inflammation.' }
+          { name: 'Hyperbilirubinemia / Jaundice (पीलिया / जॉन्डिस)', probability: 91, severity: 'High', description: 'Accumulation of bilirubin in blood causing sclera and skin yellowing. / रक्त में बिलिरुबिन के संचय से आंखों और त्वचा में पीलापन।' },
+          { name: 'Hepatic Stress / Biliary Stasis (लिवर विकार / पित्त रुकावट)', probability: 78, severity: 'Moderate', description: 'Sluggish liver processing or bile duct inflammation. / लिवर कार्यप्रणाली में सुस्ती या सूजन।' }
+        ],
+        requiredMedicines: [
+          {
+            nameEn: 'Silymarin (140mg) / Milk Thistle Liver Extract',
+            nameHi: 'सिलीमारिन (140mg) / लिवर केयर टॉनिक (सिरप/टैबलेट)',
+            dosageEn: '1 tablet / 10ml twice daily after meals',
+            dosageHi: 'दिन में 2 बार 10ml या 1 गोली भोजन के बाद लेवे',
+            purposeEn: 'Hepatoprotective agent that reduces serum bilirubin and detoxifies liver cells.',
+            purposeHi: 'लिवर कोशिकाओं की रक्षा करती है तथा रक्त में बिलिरुबिन का स्तर घटाती है।',
+            janAushadhi: 'PM Jan Aushadhi Silymarin Syrup (₹35 / bottle vs Branded ₹260)'
+          },
+          {
+            nameEn: 'PM Jan Aushadhi Hepato-Protective Tonic',
+            nameHi: 'जन औषधि हेपेटो-प्रोटेक्शन लिवर टॉनिक',
+            dosageEn: '10ml in morning & evening with warm water',
+            dosageHi: 'सुबह और शाम 10ml गुनगुने पानी के साथ लेवे',
+            purposeEn: 'Promotes healthy bile flow and accelerates hepatic recovery.',
+            purposeHi: 'पित्त स्राव को नियंत्रित कर पाचन और लिवर को स्वस्थ बनाती है।',
+            janAushadhi: 'PM Jan Aushadhi Liver Care (₹30 / bottle vs Branded ₹220)'
+          }
         ],
         biomarkers: [
           { category: 'Sclera & Eye Clarity', status: 'Yellow Tint (Scleral Icterus)', score: '48/100', icon: 'eye', ok: false },
@@ -658,13 +727,33 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
       report = {
         isCompletelyHealthy: false,
         healthScore: 75,
-        statusTitle: 'POTENTIAL ISSUE: FACIAL ERYTHEMA / DERMATITIS ⚠️',
+        statusTitle: 'POTENTIAL ISSUE: FACIAL ERYTHEMA / DERMATITIS ⚠️ (चेहरे का लालपन और सूजन / एरिथेमा)',
         statusBadgeColor: '#d97706',
         statusBgColor: '#fffbeb',
         doctorSummary: 'Physician Assessment: Pronounced facial redness and localized cheek/nasal erythema detected. This visual biomarker is consistent with facial rosacea, contact hypersensitivity dermatitis, or malar inflammatory response.',
         suspectedDiseases: [
-          { name: 'Facial Rosacea / Erythema', probability: 85, severity: 'Moderate', description: 'Vascular inflammatory response causing facial blushing and persistent redness.' },
-          { name: 'Contact / Allergic Dermatitis', probability: 68, severity: 'Low', description: 'Skin reaction to cosmetics, weather, or topical irritants.' }
+          { name: 'Facial Rosacea & Erythema / चेहरे का लालपन और सूजन (एरिथेमा)', probability: 85, severity: 'Moderate', description: 'Vascular inflammatory response causing facial blushing and persistent redness. / धमनियों में सूजन से गालों पर अत्यधिक लालिमा।' },
+          { name: 'Contact / Allergic Dermatitis / एलर्जिक त्वचा विकार', probability: 68, severity: 'Low', description: 'Skin reaction to cosmetics, weather, or topical irritants. / एलर्जी या मौसम के कारण त्वचा की जलन।' }
+        ],
+        requiredMedicines: [
+          {
+            nameEn: 'Cetirizine Hydrochloride (10mg)',
+            nameHi: 'सिटिरिज़िन हाइड्रोक्लोराइड (10mg) टैबलेट',
+            dosageEn: '1 tablet at bedtime',
+            dosageHi: 'रात को सोने से पहले 1 गोली लेवे',
+            purposeEn: 'Reduces vascular histamine release, facial blushing, and allergic skin flushing.',
+            purposeHi: 'त्वचा की सूजन, एलर्जी, लालिमा और जलन को शांत करती है।',
+            janAushadhi: 'PM Jan Aushadhi Cetirizine 10mg (₹8 / 10 tab vs Branded ₹85)'
+          },
+          {
+            nameEn: 'Calamine + Aloe Vera Topical Cream / Lotion',
+            nameHi: 'कैलामाइन + एलोवेरा त्वचा जेल / लोशन',
+            dosageEn: 'Gently apply on affected facial cheeks 2-3 times daily',
+            dosageHi: 'चेहरे के प्रभावित लाल हिस्से पर दिन में 2-3 बार हल्का लगाएं',
+            purposeEn: 'Soothes inflamed dermal tissue, lowers cheek heat, and repairs skin barrier.',
+            purposeHi: 'त्वचा को ठंडक पहुंचाकर गालों के लालपन व जलन से तुरंत राहत देती है।',
+            janAushadhi: 'PM Jan Aushadhi Calamine Lotion (₹25 / 100ml vs Branded ₹165)'
+          }
         ],
         biomarkers: [
           { category: 'Sclera & Eye Clarity', status: 'Clear', score: '95/100', icon: 'eye', ok: true },
@@ -687,13 +776,33 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
       report = {
         isCompletelyHealthy: false,
         healthScore: 72,
-        statusTitle: 'POTENTIAL ISSUE: PERIORBITAL EDEMA & FLUID RETENTION ⚠️',
+        statusTitle: 'POTENTIAL ISSUE: PERIORBITAL EDEMA & FLUID RETENTION ⚠️ (आंखों की सूजन और द्रव जमाव / इडिमा)',
         statusBadgeColor: '#d97706',
         statusBgColor: '#fffbeb',
         doctorSummary: 'Physician Assessment: Bilateral periorbital edema (puffiness around upper & lower eyelid tissues) detected. This visual pattern frequently correlates with high dietary sodium, fluid retention, thyroid underactivity (hypothyroidism), or early renal clearance sluggishness.',
         suspectedDiseases: [
-          { name: 'Periorbital Fluid Retention', probability: 84, severity: 'Moderate', description: 'Accumulation of interstitial fluid in thin ocular tissue layers.' },
-          { name: 'Renal / Thyroid Fluid Imbalance', probability: 65, severity: 'Moderate', description: 'Sluggish fluid excretion or thyroid hormone variation.' }
+          { name: 'Periorbital Edema & Fluid Retention / आंखों की सूजन और इडिमा', probability: 84, severity: 'Moderate', description: 'Accumulation of interstitial fluid in thin ocular tissue layers. / आंखों की पलकों के आसपास तरल पदार्थ जमने से सूजन।' },
+          { name: 'Renal / Thyroid Fluid Imbalance / गुर्दे व थायराइड द्रव असंतुलन', probability: 65, severity: 'Moderate', description: 'Sluggish fluid excretion or thyroid hormone variation. / शरीर से पानी निकलने में रुकावट।' }
+        ],
+        requiredMedicines: [
+          {
+            nameEn: 'Spironolactone (25mg) / Diuretic Support',
+            nameHi: 'स्पायरोनोलैक्टोन (25mg) / मूत्रवर्धक साल्ट',
+            dosageEn: '1 tablet in the morning (under physician guidance)',
+            dosageHi: 'चिकित्सक परामर्श अनुसार सुबह 1 गोली लेवे',
+            purposeEn: 'Helps excrete excess retained fluid around eyelids and tissue spaces.',
+            purposeHi: 'शरीर व आंखों के आसपास जमा अतिरिक्त पानी और सूजन को बाहर निकालती है।',
+            janAushadhi: 'PM Jan Aushadhi Spironolactone (₹14 / 10 tab vs Branded ₹95)'
+          },
+          {
+            nameEn: 'Oral Rehydration Salts (ORS Electrolyte Sachet)',
+            nameHi: 'ओआरएस (इलेक्ट्रोलाइट पेय घोल)',
+            dosageEn: 'Dissolve 1 sachet in 1 Litre clean water and sip throughout the day',
+            dosageHi: '1 लीटर पानी में 1 पैकेट घोलकर दिनभर थोड़ा-थोड़ा पिएं',
+            purposeEn: 'Balances essential sodium, potassium & renal fluid osmolarity.',
+            purposeHi: 'शरीर में सोडियम और पोटेशियम का संतुलन बनाए रखती है।',
+            janAushadhi: 'PM Jan Aushadhi ORS Sachet (₹4 / sachet vs Branded ₹22)'
+          }
         ],
         biomarkers: [
           { category: 'Sclera & Eye Clarity', status: 'Clear', score: '92/100', icon: 'eye', ok: true },
@@ -716,13 +825,33 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
       report = {
         isCompletelyHealthy: false,
         healthScore: 81,
-        statusTitle: 'POTENTIAL ISSUE: CHRONIC FATIGUE & SLEEP DEPRIVATION ⚠️',
+        statusTitle: 'POTENTIAL ISSUE: CHRONIC FATIGUE & SLEEP DEPRIVATION ⚠️ (अत्यधिक थकान व नींद की कमी - डार्क सर्कल्स)',
         statusBadgeColor: '#0284c7',
         statusBgColor: '#f0f9ff',
         doctorSummary: 'Physician Assessment: Periorbital hyperpigmentation (dark circles), micro-facial strain, and mild skin dehydration observed. While non-acute, this indicates sleep debt, high oxidative stress, or potential sleep apnea.',
         suspectedDiseases: [
-          { name: 'Sleep Deprivation / Fatigue Syndrome', probability: 88, severity: 'Low-Moderate', description: 'Chronically insufficient REM sleep causing vascular dilation around eyes.' },
-          { name: 'Oxidative Stress & Dehydration', probability: 72, severity: 'Low', description: 'Reduced skin turgor from low water intake and prolonged screen use.' }
+          { name: 'Chronic Fatigue & Sleep Deprivation / अत्यधिक थकान और नींद की कमी (डार्क सर्कल्स)', probability: 88, severity: 'Low-Moderate', description: 'Chronically insufficient REM sleep causing vascular dilation around eyes. / नींद की कमी और तनाव से आंखों के नीचे काले घेरे।' },
+          { name: 'Oxidative Stress & Dehydration / ऑक्सीडेटिव तनाव और निर्जलीकरण', probability: 72, severity: 'Low', description: 'Reduced skin turgor from low water intake and prolonged screen use. / पानी की कमी और लगातार स्क्रीन के इस्तेमाल से सुस्ती।' }
+        ],
+        requiredMedicines: [
+          {
+            nameEn: 'Vitamin B-Complex with Zinc & Ginseng',
+            nameHi: 'विटामिन बी-कॉम्प्लेक्स + जिंक एवं जिन्सेंग टैबलेट',
+            dosageEn: '1 tablet daily after breakfast',
+            dosageHi: 'प्रतिदिन सुबह नाश्ते के बाद 1 गोली लेवे',
+            purposeEn: 'Replenishes cellular energy, reduces under-eye micro-vascular strain & fatigue.',
+            purposeHi: 'शारीरिक व मानसिक थकान दूर कर नसों को ऊर्जा और शक्ति प्रदान करती है।',
+            janAushadhi: 'PM Jan Aushadhi B-Complex + Zinc (₹15 / 10 tab vs Branded ₹120)'
+          },
+          {
+            nameEn: 'Melatonin (3mg) Restorative Sleep Aid',
+            nameHi: 'मेलाटोनिन (3mg) प्राकृतिक नींद सहायक टैबलेट',
+            dosageEn: '1 tablet 30 minutes before bedtime',
+            dosageHi: 'रात को सोने से 30 मिनट पहले 1 गोली लेवे',
+            purposeEn: 'Regulates circadian rhythm, improves REM sleep quality and fades dark circles.',
+            purposeHi: 'गहरी नींद लाती है तथा आंखों के नीचे के काले घेरों (Dark circles) को मिटाती है।',
+            janAushadhi: 'PM Jan Aushadhi Melatonin 3mg (₹18 / 10 tab vs Branded ₹150)'
+          }
         ],
         biomarkers: [
           { category: 'Sclera & Eye Clarity', status: 'Mild Red Venules (Tired Eyes)', score: '78/100', icon: 'eye', ok: false },
@@ -1221,6 +1350,62 @@ const FaceHealthScanner = ({ onScanComplete, onClose }) => {
               ))}
             </div>
           </div>
+
+          {/* BILINGUAL REQUIRED MEDICINES SECTION (ENGLISH & HINDI) */}
+          {scanResult.requiredMedicines && scanResult.requiredMedicines.length > 0 && (
+            <div style={{ background: 'var(--bg-main)', borderRadius: '18px', padding: '1.5rem', border: '1.5px solid rgba(2, 132, 199, 0.3)', marginBottom: '1.5rem', boxShadow: '0 4px 20px rgba(2, 132, 199, 0.06)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
+                <h4 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Pill size={22} color="#0284c7" /> Required Medicines / आवश्यक दवाइयां (English & Hindi)
+                </h4>
+                <span style={{ fontSize: '0.75rem', fontWeight: 800, padding: '0.2rem 0.65rem', borderRadius: '10px', background: 'rgba(2, 132, 199, 0.12)', color: '#0284c7' }}>
+                  Dual Language Prescription / द्विभाषी नुस्खा
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {scanResult.requiredMedicines.map((med, mIdx) => (
+                  <div key={mIdx} style={{ background: 'var(--bg-surface)', borderRadius: '14px', padding: '1.1rem 1.3rem', border: '1.5px solid rgba(2, 132, 199, 0.25)', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                      <div>
+                        <strong style={{ fontSize: '1.02rem', color: '#0284c7', display: 'block' }}>
+                          {mIdx + 1}. {med.nameEn}
+                        </strong>
+                        <strong style={{ fontSize: '0.96rem', color: 'var(--text-main)', display: 'block', marginTop: '2px' }}>
+                          🇮🇳 {med.nameHi}
+                        </strong>
+                      </div>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 800, background: '#ecfdf5', color: '#059669', padding: '0.25rem 0.65rem', borderRadius: '10px', border: '1px solid rgba(5, 150, 105, 0.3)' }}>
+                        {med.janAushadhi}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.85rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px dashed var(--border-light)' }}>
+                      <div>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Dosage & Timing / खुराक एवं समय:</span>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-main)', margin: '3px 0 0 0', fontWeight: 600 }}>
+                          🇬🇧 {med.dosageEn}
+                        </p>
+                        <p style={{ fontSize: '0.85rem', color: '#059669', margin: '3px 0 0 0', fontWeight: 600 }}>
+                          🇮🇳 {med.dosageHi}
+                        </p>
+                      </div>
+
+                      <div>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Medical Purpose / दवा का उद्देश्य:</span>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-main)', margin: '3px 0 0 0' }}>
+                          🇬🇧 {med.purposeEn}
+                        </p>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '3px 0 0 0' }}>
+                          🇮🇳 {med.purposeHi}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ALL SCANABLE DISEASES: PROBLEM & HOW TO CURE PROTOCOL */}
           <div style={{ background: 'var(--bg-main)', borderRadius: '18px', padding: '1.25rem', border: '1px solid var(--border-light)', marginBottom: '1.5rem' }}>
