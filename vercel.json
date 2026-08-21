@@ -23,7 +23,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "React/$1"
+      "dest": "/index.html"
     }
   ]
 }
