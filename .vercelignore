@@ -1,0 +1,9 @@
+node_modules
+**/node_modules
+.git
+.gemini
+dist
+**/dist
+React/dist
+Backend/uploads
+**/uploads
