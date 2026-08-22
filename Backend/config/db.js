@@ -22,22 +22,29 @@ const connectDB = async () => {
     return cachedPromise;
   }
 
+  if (process.env.VERCEL) {
+    try {
+      mongoose.set('bufferCommands', false);
+    } catch (e) {}
+  }
+
   cachedPromise = (async () => {
     let primaryUri = process.env.MONGO_URI || 'mongodb+srv://krbittu803110_db_user:dPU9R7yWn6z813GU@cluster0.j2vupm7.mongodb.net/india';
     
-    // Set 3.5 sec timeout on Vercel serverless to prevent Vercel 10s Serverless Execution limit timeout (504)
-    const timeoutMs = process.env.VERCEL ? 3500 : 10000;
+    // Set fast 1.5 sec timeout on Vercel serverless to prevent Vercel 10s Serverless Execution limit timeout (504)
+    const timeoutMs = process.env.VERCEL ? 1500 : 10000;
 
-    if (!primaryUri.includes('serverSelectionTimeoutMS')) {
-      primaryUri += (primaryUri.includes('?') ? '&' : '?') + `serverSelectionTimeoutMS=${timeoutMs}&connectTimeoutMS=${timeoutMs}`;
-    }
+    // Strip any existing timeout query params so timeoutMs is strictly enforced
+    primaryUri = primaryUri.replace(/([?&])serverSelectionTimeoutMS=\d+/g, '').replace(/([?&])connectTimeoutMS=\d+/g, '');
+    primaryUri += (primaryUri.includes('?') ? '&' : '?') + `serverSelectionTimeoutMS=${timeoutMs}&connectTimeoutMS=${timeoutMs}`;
 
     const connectionOpts = {
       serverSelectionTimeoutMS: timeoutMs,
       connectTimeoutMS: timeoutMs,
       socketTimeoutMS: timeoutMs,
       maxPoolSize: 10,
-      minPoolSize: 0
+      minPoolSize: 0,
+      bufferCommands: !process.env.VERCEL
     };
 
     try {
