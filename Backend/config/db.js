@@ -4,99 +4,76 @@ import { ensureAdminAccount } from './adminInit.js';
 
 dotenv.config();
 
-mongoose.set('bufferCommands', true);
+// Disable buffering so queries fail immediately with clear errors if disconnected
+mongoose.set('bufferCommands', false);
 
-let cachedConn = null;
-let cachedPromise = null;
-let memoryServerInstance = null;
+let cached = global.mongoose;
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
 
 const connectDB = async () => {
-  if (cachedConn && mongoose.connection.readyState === 1) {
-    return cachedConn;
+  if (cached.conn && mongoose.connection.readyState === 1) {
+    return cached.conn;
   }
 
   if (mongoose.connection.readyState === 1) {
-    cachedConn = mongoose.connection;
-    return cachedConn;
+    cached.conn = mongoose.connection;
+    return cached.conn;
   }
 
-  if (cachedPromise) {
-    return cachedPromise;
-  }
-
-  cachedPromise = (async () => {
-    let primaryUri = process.env.MONGO_URI || 'mongodb+srv://krbittu803110_db_user:dPU9R7yWn6z813GU@cluster0.j2vupm7.mongodb.net/india';
-    
-    // Set 10s connection timeout for reliable connection establishment on Vercel and local environments
-    const timeoutMs = 10000;
-
-    // Strip any existing timeout query params so timeoutMs is strictly enforced
-    primaryUri = primaryUri.replace(/([?&])serverSelectionTimeoutMS=\d+/g, '').replace(/([?&])connectTimeoutMS=\d+/g, '');
-    primaryUri += (primaryUri.includes('?') ? '&' : '?') + `serverSelectionTimeoutMS=${timeoutMs}&connectTimeoutMS=${timeoutMs}`;
-
-    const connectionOpts = {
-      serverSelectionTimeoutMS: timeoutMs,
-      connectTimeoutMS: timeoutMs,
-      socketTimeoutMS: timeoutMs,
-      maxPoolSize: 10,
-      minPoolSize: 0,
-      bufferCommands: true
-    };
-
+  if (cached.promise) {
     try {
-      console.log(`[MEDISCAN DB] Connecting to Primary Database...`);
-      const conn = await mongoose.connect(primaryUri, connectionOpts);
-      cachedConn = conn;
-      console.log(`[MEDISCAN DB] Successfully Connected to Primary Database: ${conn.connection.host}`);
+      cached.conn = await cached.promise;
+      return cached.conn;
+    } catch (e) {
+      cached.promise = null;
+    }
+  }
+
+  let primaryUri = process.env.MONGO_URI || 'mongodb+srv://krbittu803110_db_user:dPU9R7yWn6z813GU@cluster0.j2vupm7.mongodb.net/india';
+  const timeoutMs = 7000;
+
+  primaryUri = primaryUri.replace(/([?&])serverSelectionTimeoutMS=\d+/g, '').replace(/([?&])connectTimeoutMS=\d+/g, '');
+  primaryUri += (primaryUri.includes('?') ? '&' : '?') + `serverSelectionTimeoutMS=${timeoutMs}&connectTimeoutMS=${timeoutMs}`;
+
+  const opts = {
+    serverSelectionTimeoutMS: timeoutMs,
+    connectTimeoutMS: timeoutMs,
+    socketTimeoutMS: 15000,
+    maxPoolSize: 10,
+    minPoolSize: 0,
+    bufferCommands: false
+  };
+
+  cached.promise = (async () => {
+    try {
+      console.log(`[MEDISCAN DB] Connecting to MongoDB Atlas...`);
+      const conn = await mongoose.connect(primaryUri, opts);
+      console.log(`[MEDISCAN DB] Connected to MongoDB Atlas: ${conn.connection.host}`);
       
-      // Ensure admin account exists
       ensureAdminAccount().catch((err) => {
         console.warn('[MEDISCAN DB ADMIN INIT WARN]', err.message);
       });
 
       return conn;
-    } catch (primaryErr) {
-      console.warn(`[MEDISCAN DB WARN] Primary Atlas DB connection failed: ${primaryErr.message}`);
-      try {
-        if (mongoose.connection.readyState !== 0) {
-          await mongoose.disconnect();
-        }
-      } catch (discErr) {}
+    } catch (err) {
+      console.error(`[MEDISCAN DB ERR] Connection failed: ${err.message}`);
+      cached.promise = null;
+      throw err;
+    }
+  })();
 
-      if (!process.env.VERCEL) {
-        try {
-          console.log(`[MEDISCAN DB] Starting In-Memory Database Fallback...`);
-          const { MongoMemoryServer } = await import('mongodb-memory-server');
-          if (!memoryServerInstance) {
-            memoryServerInstance = await MongoMemoryServer.create();
-          }
-          const mongoUri = memoryServerInstance.getUri();
-          const conn = await mongoose.connect(mongoUri);
-          cachedConn = conn;
-          console.log(`[MEDISCAN DB] Connected to In-Memory Database Fallback: ${conn.connection.host}`);
-          await ensureAdminAccount();
-          return conn;
-        } catch (fallbackErr) {
-          console.error(`[MEDISCAN DB FALLBACK ERR] ${fallbackErr.message}`);
-        }
-      }
-      cachedPromise = null;
-      if (process.env.VERCEL) {
-        return null;
-      }
-      throw primaryErr;
-    }
-  })().catch((err) => {
-    cachedPromise = null;
-    if (process.env.VERCEL) {
-      return null;
-    }
+  try {
+    cached.conn = await cached.promise;
+    return cached.conn;
+  } catch (err) {
+    cached.promise = null;
     throw err;
-  });
-
-  return cachedPromise;
+  }
 };
 
 export default connectDB;
+
 
 
