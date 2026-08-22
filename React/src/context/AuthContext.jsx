@@ -145,11 +145,17 @@ export const AuthProvider = ({ children }) => {
         };
       }
 
-      // If backend error is NOT a network error, return server message directly
-      if (err.response && err.response.status >= 400 && err.response.status < 500 && typeof err.response.data === 'object' && err.response.data.message) {
+      // Return server error response message directly for any HTTP response
+      if (err.response && err.response.data && typeof err.response.data === 'object' && err.response.data.message) {
         return {
           success: false,
           message: err.response.data.message
+        };
+      }
+      if (err.response) {
+        return {
+          success: false,
+          message: 'Login failed. Please enter the exact email and password used during registration.'
         };
       }
     }
