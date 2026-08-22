@@ -52,6 +52,7 @@ export const authService = {
 export const medicineService = {
   scanMedicine: (formData) =>
     api.post('/medicines/scan', formData, {
+      timeout: 4000,
       headers: {
         'Content-Type': formData instanceof FormData ? 'multipart/form-data' : 'application/json'
       }

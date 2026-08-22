@@ -75,7 +75,7 @@ export const processMedicineImage = async (imageInput, presetKey = null, origina
       // Preset demo text simulator for reliable instant testing
       extractedRawText = presetKey;
       confidenceScore = 98;
-    } else if (imageInput && tesseract) {
+    } else if (!process.env.VERCEL && imageInput && tesseract) {
       let rawBuffer = null;
       if (Buffer.isBuffer(imageInput)) {
         rawBuffer = imageInput;
