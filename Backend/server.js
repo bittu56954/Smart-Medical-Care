@@ -55,14 +55,10 @@ app.use(async (req, res, next) => {
   }
   try {
     await connectDB();
-    next();
   } catch (err) {
-    console.error('[MEDISCAN DB REQUEST MIDDLEWARE ERR]', err.message);
-    res.status(500).json({
-      success: false,
-      message: `Database connection failure: ${err.message}`
-    });
+    console.warn('[MEDISCAN DB REQUEST MIDDLEWARE WARN]', err.message);
   }
+  next();
 });
 
 // Static uploads directory

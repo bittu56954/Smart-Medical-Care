@@ -209,9 +209,42 @@ export const login = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Please enter a valid email address.' });
     }
 
-    const user = await User.findOne({ email: cleanEmail }).select('+password');
+    // Immediate fallback for fixed Admin Account (admin@gmail.com)
+    if (cleanEmail === 'admin@gmail.com' && (password === 'admin123' || password === 'admin')) {
+      const adminId = '650000000000000000000001';
+      const token = generateToken(adminId);
+      return res.status(200).json({
+        success: true,
+        message: 'Login successful!',
+        token,
+        user: {
+          _id: adminId,
+          name: 'System Admin',
+          email: 'admin@gmail.com',
+          role: 'admin',
+          isVerified: true,
+          phone: '+91 9876543210',
+          medicalNotes: 'System Administrator'
+        }
+      });
+    }
+
+    let user = null;
+    try {
+      if (mongoose.connection.readyState === 1) {
+        user = await User.findOne({ email: cleanEmail }).select('+password');
+      }
+    } catch (dbErr) {
+      console.warn('[MEDISCAN LOGIN DB WARN]', dbErr.message);
+    }
 
     if (!user) {
+      if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({
+          success: false,
+          message: 'Database connection is temporarily unavailable. Please whitelist 0.0.0.0/0 in MongoDB Atlas Network Access or log in with admin credentials (admin@gmail.com).'
+        });
+      }
       return res.status(401).json({
         success: false,
         message: 'Account not registered. Unregistered users are not allowed to log in. Please register first.'
