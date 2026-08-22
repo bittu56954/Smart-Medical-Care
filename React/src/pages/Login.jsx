@@ -15,10 +15,19 @@ const Login = () => {
   const { showToast } = useToast();
   const navigate = useNavigate();
 
+  const validateEmail = (emailStr) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(emailStr).toLowerCase());
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !password) {
       showToast('Please enter both email and password', 'error');
+      return;
+    }
+
+    if (!validateEmail(email)) {
+      showToast('Please enter a valid email address (e.g., user@example.com).', 'error');
       return;
     }
 
@@ -30,7 +39,11 @@ const Login = () => {
         navigate('/verify-otp', { state: { email, message: res.message, otpDebug: res.otpDebug } });
       } else if (res?.success) {
         showToast('Login successful! Welcome back.', 'success');
-        navigate('/dashboard');
+        if (res.user?.role === 'admin' && res.user?.email?.toLowerCase() === 'admin@gmail.com') {
+          navigate('/admin');
+        } else {
+          navigate('/dashboard');
+        }
       } else {
         showToast(res?.message || 'Login failed. Please check your credentials.', 'error');
       }

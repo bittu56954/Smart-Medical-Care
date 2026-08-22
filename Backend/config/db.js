@@ -4,6 +4,8 @@ import { ensureAdminAccount } from './adminInit.js';
 
 dotenv.config();
 
+mongoose.set('bufferCommands', true);
+
 let cachedConn = null;
 let cachedPromise = null;
 let memoryServerInstance = null;
@@ -22,17 +24,11 @@ const connectDB = async () => {
     return cachedPromise;
   }
 
-  if (process.env.VERCEL) {
-    try {
-      mongoose.set('bufferCommands', false);
-    } catch (e) {}
-  }
-
   cachedPromise = (async () => {
     let primaryUri = process.env.MONGO_URI || 'mongodb+srv://krbittu803110_db_user:dPU9R7yWn6z813GU@cluster0.j2vupm7.mongodb.net/india';
     
-    // Set fast 1.5 sec timeout on Vercel serverless to prevent Vercel 10s Serverless Execution limit timeout (504)
-    const timeoutMs = process.env.VERCEL ? 1500 : 10000;
+    // Set 10s connection timeout for reliable connection establishment on Vercel and local environments
+    const timeoutMs = 10000;
 
     // Strip any existing timeout query params so timeoutMs is strictly enforced
     primaryUri = primaryUri.replace(/([?&])serverSelectionTimeoutMS=\d+/g, '').replace(/([?&])connectTimeoutMS=\d+/g, '');
@@ -44,7 +40,7 @@ const connectDB = async () => {
       socketTimeoutMS: timeoutMs,
       maxPoolSize: 10,
       minPoolSize: 0,
-      bufferCommands: !process.env.VERCEL
+      bufferCommands: true
     };
 
     try {
@@ -53,11 +49,10 @@ const connectDB = async () => {
       cachedConn = conn;
       console.log(`[MEDISCAN DB] Successfully Connected to Primary Database: ${conn.connection.host}`);
       
-      if (!process.env.VERCEL) {
-        ensureAdminAccount().catch((err) => {
-          console.warn('[MEDISCAN DB ADMIN INIT WARN]', err.message);
-        });
-      }
+      // Ensure admin account exists
+      ensureAdminAccount().catch((err) => {
+        console.warn('[MEDISCAN DB ADMIN INIT WARN]', err.message);
+      });
 
       return conn;
     } catch (primaryErr) {
@@ -85,6 +80,7 @@ const connectDB = async () => {
           console.error(`[MEDISCAN DB FALLBACK ERR] ${fallbackErr.message}`);
         }
       }
+      cachedPromise = null;
       if (process.env.VERCEL) {
         return null;
       }

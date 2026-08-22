@@ -7,76 +7,42 @@ import User from '../models/User.js';
  */
 export const ensureAdminAccount = async () => {
   try {
-    const defaultAccounts = [
-      {
+    const adminEmail = 'admin@gmail.com';
+    const adminPassword = 'admin123';
+
+    let adminUser = await User.findOne({ email: adminEmail }).select('+password');
+    if (!adminUser) {
+      await User.create({
         name: 'System Admin',
-        email: 'admin@gmail.com',
-        password: 'Admin#SmartCare2026',
+        email: adminEmail,
+        password: adminPassword,
         role: 'admin',
         phone: '+91 9876543210',
         isVerified: true,
         status: 'active'
-      },
-      {
-        name: 'Mediscan Admin',
-        email: 'admin@mediscan.com',
-        password: 'Admin#SmartCare2026',
-        role: 'admin',
-        phone: '+1 800-555-0199',
-        isVerified: true,
-        status: 'active'
-      },
-      {
-        name: 'Demo User',
-        email: 'user@mediscan.com',
-        password: 'User@123',
-        role: 'user',
-        phone: '+1 555-0142',
-        isVerified: true,
-        status: 'active'
-      },
-      {
-        name: 'Super Admin',
-        email: 'admin@society.com',
-        password: 'admin123',
-        role: 'admin',
-        phone: '+91 98765 43210',
-        isVerified: true,
-        status: 'active'
+      });
+      console.log(`✅ Fixed Admin Account (${adminEmail}) successfully provisioned.`);
+    } else {
+      let needsSave = false;
+      if (adminUser.role !== 'admin') {
+        adminUser.role = 'admin';
+        needsSave = true;
       }
-    ];
-
-    for (const acc of defaultAccounts) {
-      let existing = await User.findOne({ email: acc.email }).select('+password');
-      if (!existing) {
-        await User.create(acc);
-        console.log(`✅ Default Account (${acc.email}) successfully provisioned.`);
-      } else {
-        let needsSave = false;
-        if (existing.role !== acc.role) {
-          existing.role = acc.role;
-          needsSave = true;
-        }
-        if (!existing.isVerified) {
-          existing.isVerified = true;
-          needsSave = true;
-        }
-        if (existing.status !== 'active') {
-          existing.status = 'active';
-          needsSave = true;
-        }
-        const isPasswordMatch = await existing.matchPassword(acc.password);
-        if (!isPasswordMatch) {
-          existing.password = acc.password;
-          needsSave = true;
-        }
-        if (needsSave) {
-          await existing.save();
-          console.log(`✅ Default Account (${acc.email}) updated.`);
-        }
+      if (!adminUser.isVerified) {
+        adminUser.isVerified = true;
+        needsSave = true;
+      }
+      const isMatch = await adminUser.matchPassword(adminPassword);
+      if (!isMatch) {
+        adminUser.password = adminPassword;
+        needsSave = true;
+      }
+      if (needsSave) {
+        await adminUser.save();
+        console.log(`✅ Fixed Admin Account (${adminEmail}) verified with password admin123.`);
       }
     }
   } catch (error) {
-    console.error('⚠️ Error ensuring default accounts:', error.message);
+    console.error('⚠️ Error ensuring fixed admin account:', error.message);
   }
 };

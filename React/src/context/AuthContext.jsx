@@ -3,7 +3,7 @@ import { authService } from '../services/api';
 
 const AuthContext = createContext();
 
-// Helper to get local DB users
+// Helper to get local DB users (ensures fixed admin account admin@gmail.com / admin123 always exists)
 const getLocalUsers = () => {
   let users = [];
   try {
@@ -13,12 +13,11 @@ const getLocalUsers = () => {
     console.error('Failed to parse local users', e);
   }
 
-  // Ensure default accounts exist in array
   const defaultAdmin = {
     _id: 'usr_admin_00',
     name: 'System Admin',
     email: 'admin@gmail.com',
-    password: 'Admin#SmartCare2026',
+    password: 'admin123',
     role: 'admin',
     isVerified: true,
     phone: '+91 9876543210'
@@ -28,24 +27,9 @@ const getLocalUsers = () => {
   if (adminIndex === -1) {
     users.unshift(defaultAdmin);
   } else {
-    users[adminIndex].password = 'Admin#SmartCare2026';
+    users[adminIndex].password = 'admin123';
     users[adminIndex].role = 'admin';
     users[adminIndex].isVerified = true;
-  }
-
-  if (users.length === 0) {
-    users = [
-      defaultAdmin,
-      {
-        _id: 'usr_demo_02',
-        name: 'John Doe',
-        email: 'user@mediscan.com',
-        password: 'User@123',
-        role: 'user',
-        isVerified: true,
-        phone: '+1 555-0142'
-      }
-    ];
   }
 
   localStorage.setItem('mediscan_users_db', JSON.stringify(users));
@@ -170,8 +154,8 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
-    // Local storage fallback for mobile / offline / Vercel preview
-    console.warn('[MEDISCAN AUTH] Backend unreachable or returned HTML, checking local database...');
+    // Local storage fallback for offline / preview
+    console.warn('[MEDISCAN AUTH] Backend unreachable, checking local database...');
     const localUsers = getLocalUsers();
 
     // Check by email first
@@ -179,61 +163,40 @@ export const AuthProvider = ({ children }) => {
       (u) => u.email.toLowerCase() === cleanEmail
     );
 
-    if (existingUser) {
-      if (existingUser.password !== cleanPassword && existingUser.password !== password) {
-        return {
-          success: false,
-          message: 'Incorrect password for ' + cleanEmail + '. Please check your password.'
-        };
-      }
-
-      if (!existingUser.isVerified) {
-        localStorage.setItem('mediscan_pending_email', cleanEmail);
-        setPendingEmail(cleanEmail);
-        return {
-          success: false,
-          requiresVerification: true,
-          email: cleanEmail,
-          message: 'Email address is not verified yet. Verification OTP required.',
-          otpDebug: existingUser.otp || '123456'
-        };
-      }
-
-      const localToken = 'local_token_' + Date.now() + '_' + Math.random().toString(36).substring(2);
-      localStorage.setItem('mediscan_token', localToken);
-      localStorage.setItem('mediscan_user_data', JSON.stringify(existingUser));
-      localStorage.removeItem('mediscan_pending_email');
-      setToken(localToken);
-      setUser(existingUser);
-      setPendingEmail(null);
-      return { success: true, user: existingUser };
+    if (!existingUser) {
+      return {
+        success: false,
+        message: 'Account not registered. Unregistered users are not allowed to log in. Please register first.'
+      };
     }
 
-    // If user account is not found locally at all, auto-create it for smooth mobile login!
-    const nameFromEmail = cleanEmail.split('@')[0];
-    const autoUser = {
-      _id: 'usr_auto_' + Date.now(),
-      name: nameFromEmail ? nameFromEmail.charAt(0).toUpperCase() + nameFromEmail.slice(1) : 'User',
-      email: cleanEmail,
-      password: cleanPassword || '123456',
-      role: cleanEmail.includes('admin') ? 'admin' : 'user',
-      isVerified: true,
-      phone: '+91 9876543210',
-      createdAt: new Date().toISOString()
-    };
+    if (existingUser.password !== cleanPassword && existingUser.password !== password) {
+      return {
+        success: false,
+        message: 'Incorrect password. Please enter the exact password you used during registration.'
+      };
+    }
 
-    localUsers.push(autoUser);
-    saveLocalUsers(autoUser);
+    if (!existingUser.isVerified) {
+      localStorage.setItem('mediscan_pending_email', cleanEmail);
+      setPendingEmail(cleanEmail);
+      return {
+        success: false,
+        requiresVerification: true,
+        email: cleanEmail,
+        message: 'Your account registration is incomplete. Please verify your email with OTP before logging in.',
+        otpDebug: existingUser.otp || '123456'
+      };
+    }
 
-    const localToken = 'local_token_' + Date.now() + '_' + Math.random().toString(36).substring(2);
+    const localToken = 'local_token_' + (cleanEmail === 'admin@gmail.com' ? 'admin_' : '') + Date.now() + '_' + Math.random().toString(36).substring(2);
     localStorage.setItem('mediscan_token', localToken);
-    localStorage.setItem('mediscan_user_data', JSON.stringify(autoUser));
+    localStorage.setItem('mediscan_user_data', JSON.stringify(existingUser));
     localStorage.removeItem('mediscan_pending_email');
     setToken(localToken);
-    setUser(autoUser);
+    setUser(existingUser);
     setPendingEmail(null);
-
-    return { success: true, user: autoUser };
+    return { success: true, user: existingUser };
   };
 
   // Register handler
@@ -278,7 +241,7 @@ export const AuthProvider = ({ children }) => {
       name,
       email: cleanEmail,
       password,
-      role,
+      role: 'user',
       phone,
       isVerified: false,
       otp: generatedOtp,
@@ -410,7 +373,7 @@ export const AuthProvider = ({ children }) => {
         pendingEmail,
         setPendingEmail,
         isAuthenticated: !!user && !!token,
-        isAdmin: user?.role === 'admin',
+        isAdmin: user?.role === 'admin' && user?.email?.toLowerCase() === 'admin@gmail.com',
         loginUser,
         registerUser,
         verifyOTP,

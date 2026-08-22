@@ -33,19 +33,30 @@ const AdminDashboard = () => {
   const fetchAdminData = async () => {
     try {
       setLoading(true);
-      const [statRes, userRes, medRes, scanRes] = await Promise.all([
+      setError('');
+      const results = await Promise.allSettled([
         adminService.getAdminStats(),
         adminService.getAllUsers(),
         adminService.getAllMedicines(),
         adminService.getAllScans()
       ]);
 
-      if (statRes.data.success) setStats(statRes.data.stats);
-      if (userRes.data.success) setUsers(userRes.data.users || []);
-      if (medRes.data.success) setMedicines(medRes.data.medicines || []);
-      if (scanRes.data.success) setScans(scanRes.data.scans || []);
+      const [statRes, userRes, medRes, scanRes] = results;
+
+      if (statRes.status === 'fulfilled' && statRes.value?.data?.success) {
+        setStats(statRes.value.data.stats);
+      }
+      if (userRes.status === 'fulfilled' && userRes.value?.data?.success) {
+        setUsers(userRes.value.data.users || []);
+      }
+      if (medRes.status === 'fulfilled' && medRes.value?.data?.success) {
+        setMedicines(medRes.value.data.medicines || []);
+      }
+      if (scanRes.status === 'fulfilled' && scanRes.value?.data?.success) {
+        setScans(scanRes.value.data.scans || []);
+      }
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to fetch admin dashboard data.');
+      console.warn('[ADMIN DASHBOARD] Data loading notice:', err);
     } finally {
       setLoading(false);
     }

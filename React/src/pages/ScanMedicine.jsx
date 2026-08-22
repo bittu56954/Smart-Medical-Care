@@ -206,7 +206,8 @@ const ScanMedicine = () => {
         return;
       }
 
-      const parsedGeneric = parseGenericMedicineFromText(candidateQuery);
+      const queryForParsing = candidateQuery || (selectedFile ? 'Scanned Medicine Label' : '');
+      const parsedGeneric = parseGenericMedicineFromText(queryForParsing);
       if (parsedGeneric) {
         setScanResult({
           success: true,

@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from './LoadingSpinner';
 
 const ProtectedRoute = ({ children, adminOnly = false }) => {
-  const { isAuthenticated, isAdmin, loading } = useAuth();
+  const { isAuthenticated, isAdmin, user, loading } = useAuth();
 
   if (loading) {
     return <LoadingSpinner text="Checking authentication..." />;
@@ -14,7 +14,7 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (adminOnly && !isAdmin) {
+  if (adminOnly && (!isAdmin || user?.email?.toLowerCase() !== 'admin@gmail.com')) {
     return <Navigate to="/dashboard" replace />;
   }
 

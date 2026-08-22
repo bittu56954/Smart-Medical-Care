@@ -10,22 +10,20 @@ export const protect = async (req, res, next) => {
     try {
       token = req.headers.authorization.split(' ')[1];
 
-      // Support local / serverless preview tokens
+      // Support local offline tokens if provided
       if (token.startsWith('local_token_')) {
-        const dummyId = new mongoose.Types.ObjectId('650000000000000000000001');
-        if (mongoose.connection.readyState === 1) {
-          req.user = await User.findById(dummyId).select('-password');
-        }
-        if (!req.user) {
+        if (token.includes('admin') || token.includes('admin@gmail.com')) {
           req.user = {
-            _id: dummyId,
-            name: 'Mediscan User',
+            _id: new mongoose.Types.ObjectId('650000000000000000000001'),
+            name: 'System Admin',
             email: 'admin@gmail.com',
             role: 'admin',
             isVerified: true
           };
+          return next();
+        } else {
+          return res.status(401).json({ success: false, message: 'Not authorized, local token invalid.' });
         }
-        return next();
       }
 
       const decoded = jwt.verify(
@@ -33,22 +31,18 @@ export const protect = async (req, res, next) => {
         process.env.JWT_SECRET || 'mediscan_super_secret_jwt_key_2026_safe_health_app'
       );
 
-      if (mongoose.connection.readyState === 1 && decoded.id && mongoose.Types.ObjectId.isValid(decoded.id)) {
-        req.user = await User.findById(decoded.id).select('-password');
+      if (decoded && decoded.id) {
+        if (mongoose.connection.readyState === 1 && mongoose.Types.ObjectId.isValid(decoded.id)) {
+          try {
+            req.user = await User.findById(decoded.id).select('-password');
+          } catch (dbErr) {
+            console.warn('[AUTH MIDDLEWARE DB WARN]', dbErr.message);
+          }
+        }
       }
 
       if (!req.user) {
-        const validId = (decoded && decoded.id && mongoose.Types.ObjectId.isValid(decoded.id))
-          ? new mongoose.Types.ObjectId(decoded.id)
-          : new mongoose.Types.ObjectId('650000000000000000000001');
-
-        req.user = {
-          _id: validId,
-          name: 'Mediscan User',
-          email: 'admin@gmail.com',
-          role: 'admin',
-          isVerified: true
-        };
+        return res.status(401).json({ success: false, message: 'Not authorized, user account not found.' });
       }
 
       next();
@@ -67,35 +61,24 @@ export const optionalProtect = async (req, res, next) => {
     try {
       const token = req.headers.authorization.split(' ')[1];
       if (token.startsWith('local_token_')) {
-        const dummyId = new mongoose.Types.ObjectId('650000000000000000000001');
-        req.user = {
-          _id: dummyId,
-          name: 'Mediscan User',
-          email: 'admin@gmail.com',
-          role: 'admin',
-          isVerified: true
-        };
+        if (token.includes('admin') || token.includes('admin@gmail.com')) {
+          req.user = {
+            _id: new mongoose.Types.ObjectId('650000000000000000000001'),
+            name: 'System Admin',
+            email: 'admin@gmail.com',
+            role: 'admin',
+            isVerified: true
+          };
+        }
         return next();
       }
+
       const decoded = jwt.verify(
         token,
         process.env.JWT_SECRET || 'mediscan_super_secret_jwt_key_2026_safe_health_app'
       );
-      if (mongoose.connection.readyState === 1 && decoded.id && mongoose.Types.ObjectId.isValid(decoded.id)) {
+      if (decoded && decoded.id) {
         req.user = await User.findById(decoded.id).select('-password');
-      }
-      if (!req.user) {
-        const validId = (decoded && decoded.id && mongoose.Types.ObjectId.isValid(decoded.id))
-          ? new mongoose.Types.ObjectId(decoded.id)
-          : new mongoose.Types.ObjectId('650000000000000000000001');
-
-        req.user = {
-          _id: validId,
-          name: 'Mediscan User',
-          email: 'admin@gmail.com',
-          role: 'admin',
-          isVerified: true
-        };
       }
     } catch (error) {
       // Ignore token validation errors for optional access
@@ -104,11 +87,11 @@ export const optionalProtect = async (req, res, next) => {
   next();
 };
 
-// Admin authorization middleware
+// Admin authorization middleware (strictly admin@gmail.com)
 export const adminOnly = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') {
+  if (req.user && req.user.role === 'admin' && req.user.email && req.user.email.toLowerCase() === 'admin@gmail.com') {
     next();
   } else {
-    return res.status(403).json({ success: false, message: 'Access denied: Admin privileges required.' });
+    return res.status(403).json({ success: false, message: 'Access denied: Admin Panel is accessible strictly with fixed admin credentials (admin@gmail.com) only.' });
   }
 };

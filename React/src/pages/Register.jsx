@@ -26,12 +26,21 @@ const Register = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const validateEmail = (emailStr) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(emailStr).toLowerCase());
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const { name, email, password, confirmPassword, phone, role } = formData;
 
     if (!name || !email || !password || !phone) {
       showToast('Please fill in all required fields.', 'error');
+      return;
+    }
+
+    if (!validateEmail(email)) {
+      showToast('Please enter a valid email address (e.g., user@example.com).', 'error');
       return;
     }
 
@@ -198,24 +207,6 @@ const Register = () => {
                 >
                   {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
-                Account Role
-              </label>
-              <div style={{ position: 'relative' }}>
-                <Shield size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <select
-                  name="role"
-                  value={formData.role}
-                  onChange={handleChange}
-                  style={{ width: '100%', paddingLeft: '2.6rem' }}
-                >
-                  <option value="user">User / Patient</option>
-                  <option value="admin">Administrator</option>
-                </select>
               </div>
             </div>
 

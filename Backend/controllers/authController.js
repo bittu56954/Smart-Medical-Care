@@ -3,6 +3,12 @@ import mongoose from 'mongoose';
 import User from '../models/User.js';
 import { sendEmail } from '../utils/sendEmail.js';
 
+// Helper to validate email format
+const validateEmail = (email) => {
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return re.test(String(email).toLowerCase());
+};
+
 // Helper to generate JWT token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'mediscan_super_secret_jwt_key_2026_safe_health_app', {
@@ -18,9 +24,12 @@ const generateOTP = () => {
 // @desc    Register a new user & send OTP email
 // @route   POST /api/auth/register
 // @access  Public
+// @desc    Register a new user & send OTP email
+// @route   POST /api/auth/register
+// @access  Public
 export const register = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ success: false, message: 'Please provide name, email, and password.' });
@@ -28,29 +37,28 @@ export const register = async (req, res) => {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    if (mongoose.connection.readyState !== 1) {
-      const otp = generateOTP();
-      return res.status(201).json({
-        success: true,
-        message: 'Registration successful! Verification OTP sent to your email.',
-        email: cleanEmail,
-        otpDebug: otp
-      });
+    if (!validateEmail(cleanEmail)) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid email address (e.g., user@example.com).' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long.' });
     }
 
     const userExists = await User.findOne({ email: cleanEmail });
     if (userExists) {
-      return res.status(400).json({ success: false, message: 'User with this email already exists.' });
+      return res.status(400).json({ success: false, message: 'An account with this email address already exists.' });
     }
 
     const otp = generateOTP();
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
+    // Regular registrations are strictly granted 'user' role
     const user = await User.create({
       name,
       email: cleanEmail,
       password,
-      role: role && role === 'admin' ? 'admin' : 'user',
+      role: 'user',
       isVerified: false,
       verificationOTP: otp,
       verificationOTPExpires: otpExpires
@@ -97,26 +105,9 @@ export const verifyOTP = async (req, res) => {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    if (mongoose.connection.readyState !== 1) {
-      const fallbackId = 'usr_sv_' + Date.now();
-      const token = generateToken(fallbackId);
-      return res.status(200).json({
-        success: true,
-        message: 'Email verified successfully!',
-        token,
-        user: {
-          _id: fallbackId,
-          name: cleanEmail.split('@')[0],
-          email: cleanEmail,
-          role: cleanEmail.includes('admin') ? 'admin' : 'user',
-          isVerified: true
-        }
-      });
-    }
-
     const user = await User.findOne({ email: cleanEmail });
     if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found.' });
+      return res.status(404).json({ success: false, message: 'User account not found.' });
     }
 
     if (user.isVerified) {
@@ -178,7 +169,14 @@ export const resendOTP = async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: cleanEmail });
+
     const otp = generateOTP();
+    if (user) {
+      user.verificationOTP = otp;
+      user.verificationOTPExpires = new Date(Date.now() + 10 * 60 * 1000);
+      await user.save();
+    }
 
     res.status(200).json({
       success: true,
@@ -207,59 +205,35 @@ export const login = async (req, res) => {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    if (mongoose.connection.readyState !== 1) {
-      console.warn(`[LOGIN SERVERLESS FALLBACK] Disconnected DB, generating token for ${cleanEmail}`);
-      const userName = cleanEmail.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ');
-      const fallbackId = 'usr_sv_' + Date.now();
-      const token = generateToken(fallbackId);
-      return res.status(200).json({
-        success: true,
-        message: 'Login successful!',
-        token,
-        user: {
-          _id: fallbackId,
-          name: userName ? userName.charAt(0).toUpperCase() + userName.slice(1) : 'User',
-          email: cleanEmail,
-          role: cleanEmail.includes('admin') ? 'admin' : 'user',
-          isVerified: true,
-          phone: '+91 9876543210',
-          medicalNotes: ''
-        }
+    if (!validateEmail(cleanEmail)) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid email address.' });
+    }
+
+    const user = await User.findOne({ email: cleanEmail }).select('+password');
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account not registered. Unregistered users are not allowed to log in. Please register first.'
       });
     }
 
-    let user = await User.findOne({ email: cleanEmail }).select('+password');
-
-    if (!user) {
-      const userName = cleanEmail.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ');
-      user = await User.create({
-        name: userName ? userName.charAt(0).toUpperCase() + userName.slice(1) : 'User',
-        email: cleanEmail,
-        password: password,
-        role: cleanEmail.includes('admin') ? 'admin' : 'user',
-        isVerified: true,
-        status: 'active'
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: 'Incorrect password. Please enter the exact password you used during registration.'
       });
-    } else {
-      let isMatch = await user.matchPassword(password);
-      if (!isMatch) {
-        const commonDevPasswords = ['admin#smartcare2026', 'admin123', 'admin', '123456', 'user@123', 'password', '12345678'];
-        if (commonDevPasswords.includes(password.toLowerCase()) || cleanEmail.includes('admin') || cleanEmail.includes('mediscan') || password.length >= 4) {
-          user.password = password;
-          user.isVerified = true;
-          await user.save();
-          isMatch = true;
-        }
-      }
+    }
 
-      if (!isMatch) {
-        return res.status(401).json({ success: false, message: 'Invalid password for ' + cleanEmail + '. Please check your password.' });
-      }
-
-      if (!user.isVerified) {
-        user.isVerified = true;
-        await user.save();
-      }
+    if (!user.isVerified) {
+      return res.status(401).json({
+        success: false,
+        requiresVerification: true,
+        email: cleanEmail,
+        otpDebug: user.verificationOTP || '123456',
+        message: 'Your account registration is incomplete. Please verify your email with OTP before logging in.'
+      });
     }
 
     const token = generateToken(user._id);
@@ -376,46 +350,41 @@ export const resetPassword = async (req, res) => {
 export const getProfile = async (req, res) => {
   try {
     let user = null;
-    if (mongoose.connection.readyState === 1 && req.user && req.user._id && mongoose.Types.ObjectId.isValid(req.user._id)) {
-      try {
-        user = await User.findById(req.user._id);
-      } catch (e) {}
+    if (req.user && req.user._id) {
+      if (mongoose.connection.readyState === 1 && mongoose.Types.ObjectId.isValid(req.user._id)) {
+        try {
+          user = await User.findById(req.user._id);
+        } catch (e) {}
+      }
+      if (!user) {
+        user = req.user;
+      }
     }
+
     if (!user) {
-      user = req.user || {
-        _id: 'usr_default',
-        name: 'Bittu',
-        email: 'admin@gmail.com',
-        role: 'admin',
-        isVerified: true
-      };
+      return res.status(401).json({
+        success: false,
+        message: 'User session not found or unauthorized.'
+      });
     }
 
     res.status(200).json({
       success: true,
       user: {
         _id: user._id,
-        name: user.name || 'Bittu',
-        email: user.email || 'admin@gmail.com',
+        name: user.name,
+        email: user.email,
         role: user.role || 'user',
         isVerified: user.isVerified !== false,
-        phone: user.phone || '+91 9876543210',
+        phone: user.phone || '',
         medicalNotes: user.medicalNotes || '',
         createdAt: user.createdAt || new Date().toISOString()
       }
     });
   } catch (error) {
-    res.status(200).json({
-      success: true,
-      user: {
-        _id: req.user?._id || 'usr_default',
-        name: req.user?.name || 'Bittu',
-        email: req.user?.email || 'admin@gmail.com',
-        role: req.user?.role || 'user',
-        isVerified: true,
-        phone: req.user?.phone || '+91 9876543210',
-        medicalNotes: req.user?.medicalNotes || ''
-      }
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching user profile.'
     });
   }
 };

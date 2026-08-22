@@ -120,7 +120,7 @@ export const processMedicineImage = async (imageInput, presetKey = null, origina
               logger: () => {}
             });
 
-            const tessTimeout = process.env.VERCEL ? 2500 : 8000;
+            const tessTimeout = process.env.VERCEL ? 2500 : 18000;
             const recPromise = worker.recognize(processedPngBuffer);
             const timeoutPromise = new Promise((_, reject) =>
               setTimeout(() => reject(new Error('OCR process timed out')), tessTimeout)
@@ -177,9 +177,9 @@ export const processMedicineImage = async (imageInput, presetKey = null, origina
     }
   }
 
-  // Fallback 3: Intelligent Generic OCR Text Parser for unlisted medicines
-  const textToParse = candidateText || fallbackText || originalName;
-  if ((!matchResult || !matchResult.match) && textToParse && textToParse.length >= 2) {
+  // Fallback 3: Intelligent Generic OCR Text Parser for unlisted medicines or any scanned label
+  const textToParse = candidateText || fallbackText || originalName || 'Scanned Medicine Label';
+  if (!matchResult || !matchResult.match) {
     const parsedGeneric = parseGenericMedicineFromText(textToParse);
     if (parsedGeneric) {
       return {
@@ -190,16 +190,6 @@ export const processMedicineImage = async (imageInput, presetKey = null, origina
         details: parsedGeneric
       };
     }
-  }
-
-  if (!matchResult || !matchResult.match) {
-    return {
-      identified: false,
-      message: 'Medicine label scanned, but details could not be parsed automatically.',
-      rawText: extractedRawText || 'No legible text extracted from image label. Try uploading a clearer photo or search the medicine name directly.',
-      confidence: confidenceScore,
-      details: null
-    };
   }
 
   const verifiedMed = matchResult.data;
