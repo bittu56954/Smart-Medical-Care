@@ -26,10 +26,20 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      console.warn('[MEDISCAN API] 401 Unauthorized detected. Clearing stale auth token.');
-      localStorage.removeItem('mediscan_token');
-      localStorage.removeItem('mediscan_user_data');
-      window.dispatchEvent(new Event('mediscan_auth_unauthorized'));
+      const requestUrl = error.config?.url || '';
+      const isAuthEndpoint =
+        requestUrl.includes('/auth/login') ||
+        requestUrl.includes('/auth/register') ||
+        requestUrl.includes('/auth/verify-otp') ||
+        requestUrl.includes('/auth/forgot-password') ||
+        requestUrl.includes('/auth/reset-password');
+
+      if (!isAuthEndpoint) {
+        console.warn('[MEDISCAN API] 401 Unauthorized detected on protected route. Clearing stale auth token.');
+        localStorage.removeItem('mediscan_token');
+        localStorage.removeItem('mediscan_user_data');
+        window.dispatchEvent(new Event('mediscan_auth_unauthorized'));
+      }
     }
     return Promise.reject(error);
   }

@@ -26,21 +26,19 @@ export const scanMedicine = async (req, res) => {
     const scanResult = await processMedicineImage(imageInput, presetKey, imageName, fallbackText);
 
     let historyId = 'sh_' + Date.now();
-    if (mongoose.connection.readyState === 1) {
-      try {
-        const historyEntry = await ScanHistory.create({
-          user: req.user ? req.user._id : null,
-          imageName: imageName,
-          imageUrl: req.file ? `/uploads/${req.file.filename}` : '',
-          rawExtractedText: scanResult.rawText || '',
-          status: scanResult.identified ? 'identified' : 'unidentified',
-          confidenceScore: scanResult.confidence || 0,
-          identifiedMedicine: scanResult.identified ? scanResult.details : {}
-        });
-        historyId = historyEntry._id;
-      } catch (dbErr) {
-        console.warn('[MEDISCAN DB SCAN HISTORY WARN]', dbErr.message);
-      }
+    try {
+      const historyEntry = await ScanHistory.create({
+        user: req.user ? req.user._id : null,
+        imageName: imageName,
+        imageUrl: req.file && req.file.filename ? `/uploads/${req.file.filename}` : '',
+        rawExtractedText: scanResult.rawText || '',
+        status: scanResult.identified ? 'identified' : 'unidentified',
+        confidenceScore: scanResult.confidence || 0,
+        identifiedMedicine: scanResult.identified ? scanResult.details : {}
+      });
+      historyId = historyEntry._id;
+    } catch (dbErr) {
+      console.warn('[MEDISCAN DB SCAN HISTORY WARN]', dbErr.message);
     }
 
     if (!scanResult.identified) {
@@ -145,14 +143,6 @@ export const saveMedicine = async (req, res) => {
 // @access  Private
 export const getUserMedicines = async (req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(200).json({
-        success: true,
-        count: 0,
-        medicines: []
-      });
-    }
-
     const medicines = await Medicine.find({ user: req.user._id }).sort({ createdAt: -1 });
 
     // Recalculate status for each medicine dynamically
@@ -167,7 +157,7 @@ export const getUserMedicines = async (req, res) => {
       medicines: updatedMedicines
     });
   } catch (error) {
-    res.status(200).json({ success: true, count: 0, medicines: [] });
+    res.status(500).json({ success: false, message: error.message || 'Error fetching user medicines.' });
   }
 };
 

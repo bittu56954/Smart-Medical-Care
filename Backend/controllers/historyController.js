@@ -6,14 +6,6 @@ import ScanHistory from '../models/ScanHistory.js';
 // @access  Private
 export const getScanHistory = async (req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(200).json({
-        success: true,
-        count: 0,
-        history: []
-      });
-    }
-
     const history = await ScanHistory.find({ user: req.user._id }).sort({ scanDate: -1 });
 
     res.status(200).json({
@@ -22,7 +14,7 @@ export const getScanHistory = async (req, res) => {
       history
     });
   } catch (error) {
-    res.status(200).json({ success: true, count: 0, history: [] });
+    res.status(500).json({ success: false, message: error.message || 'Error fetching scan history.' });
   }
 };
 
@@ -31,15 +23,13 @@ export const getScanHistory = async (req, res) => {
 // @access  Private
 export const deleteHistoryItem = async (req, res) => {
   try {
-    if (mongoose.connection.readyState === 1) {
-      await ScanHistory.findOneAndDelete({ _id: req.params.id, user: req.user._id });
-    }
+    await ScanHistory.findOneAndDelete({ _id: req.params.id, user: req.user._id });
     res.status(200).json({
       success: true,
       message: 'Scan history entry deleted.'
     });
   } catch (error) {
-    res.status(200).json({ success: true, message: 'Scan history entry deleted.' });
+    res.status(500).json({ success: false, message: error.message || 'Error deleting scan history entry.' });
   }
 };
 
@@ -48,14 +38,12 @@ export const deleteHistoryItem = async (req, res) => {
 // @access  Private
 export const clearHistory = async (req, res) => {
   try {
-    if (mongoose.connection.readyState === 1) {
-      await ScanHistory.deleteMany({ user: req.user._id });
-    }
+    await ScanHistory.deleteMany({ user: req.user._id });
     res.status(200).json({
       success: true,
       message: 'All scan history entries cleared.'
     });
   } catch (error) {
-    res.status(200).json({ success: true, message: 'All scan history entries cleared.' });
+    res.status(500).json({ success: false, message: error.message || 'Error clearing scan history.' });
   }
 };

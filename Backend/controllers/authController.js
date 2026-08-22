@@ -236,14 +236,7 @@ export const login = async (req, res) => {
       }
     }
 
-    let user = null;
-    try {
-      if (mongoose.connection.readyState === 1) {
-        user = await User.findOne({ email: cleanEmail }).select('+password');
-      }
-    } catch (dbErr) {
-      console.warn('[MEDISCAN LOGIN DB WARN]', dbErr.message);
-    }
+    const user = await User.findOne({ email: cleanEmail }).select('+password');
 
     if (!user) {
       return res.status(401).json({

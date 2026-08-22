@@ -9,20 +9,6 @@ import Reminder from '../models/Reminder.js';
 // @access  Private/Admin
 export const getAdminStats = async (req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(200).json({
-        success: true,
-        stats: {
-          totalUsers: 148,
-          totalMedicines: 86,
-          totalScans: 3520,
-          unidentifiedScans: 12,
-          expiredMedicines: 4,
-          activeReminders: 18
-        }
-      });
-    }
-
     const totalUsers = await User.countDocuments();
     const totalMedicines = await Medicine.countDocuments();
     const totalScans = await ScanHistory.countDocuments();
@@ -42,16 +28,9 @@ export const getAdminStats = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(200).json({
-      success: true,
-      stats: {
-        totalUsers: 148,
-        totalMedicines: 86,
-        totalScans: 3520,
-        unidentifiedScans: 12,
-        expiredMedicines: 4,
-        activeReminders: 18
-      }
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching admin statistics.'
     });
   }
 };
@@ -61,14 +40,6 @@ export const getAdminStats = async (req, res) => {
 // @access  Private/Admin
 export const getAllUsers = async (req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(200).json({
-        success: true,
-        count: 1,
-        users: [{ _id: 'usr_admin_1', name: 'Super Admin', email: 'admin@gmail.com', role: 'admin', isVerified: true }]
-      });
-    }
-
     const users = await User.find().select('-password').sort({ createdAt: -1 });
     res.status(200).json({
       success: true,
@@ -76,10 +47,9 @@ export const getAllUsers = async (req, res) => {
       users
     });
   } catch (error) {
-    res.status(200).json({
-      success: true,
-      count: 1,
-      users: [{ _id: 'usr_admin_1', name: 'Super Admin', email: 'admin@gmail.com', role: 'admin', isVerified: true }]
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching registered users.'
     });
   }
 };
@@ -142,24 +112,11 @@ export const deleteUser = async (req, res) => {
 // @access  Private/Admin
 export const getAllMedicines = async (req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(200).json({
-        success: true,
-        count: 0,
-        medicines: []
-      });
-    }
-
     let medicines = [];
     try {
       medicines = await Medicine.find().populate('user', 'name email').sort({ createdAt: -1 });
     } catch (dbQueryErr) {
-      console.warn('[ADMIN MEDICINES QUERY WARN]', dbQueryErr.message);
-      try {
-        medicines = await Medicine.find().sort({ createdAt: -1 });
-      } catch (e) {
-        medicines = [];
-      }
+      medicines = await Medicine.find().sort({ createdAt: -1 });
     }
 
     res.status(200).json({
@@ -168,10 +125,9 @@ export const getAllMedicines = async (req, res) => {
       medicines: medicines || []
     });
   } catch (error) {
-    res.status(200).json({
-      success: true,
-      count: 0,
-      medicines: []
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching system medicines.'
     });
   }
 };
@@ -181,24 +137,11 @@ export const getAllMedicines = async (req, res) => {
 // @access  Private/Admin
 export const getAllScans = async (req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(200).json({
-        success: true,
-        count: 0,
-        scans: []
-      });
-    }
-
     let scans = [];
     try {
       scans = await ScanHistory.find().populate('user', 'name email').sort({ scanDate: -1 });
     } catch (dbQueryErr) {
-      console.warn('[ADMIN SCANS QUERY WARN]', dbQueryErr.message);
-      try {
-        scans = await ScanHistory.find().sort({ scanDate: -1 });
-      } catch (e) {
-        scans = [];
-      }
+      scans = await ScanHistory.find().sort({ scanDate: -1 });
     }
 
     res.status(200).json({
@@ -207,10 +150,9 @@ export const getAllScans = async (req, res) => {
       scans: scans || []
     });
   } catch (error) {
-    res.status(200).json({
-      success: true,
-      count: 0,
-      scans: []
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching scan audit logs.'
     });
   }
 };

@@ -31,13 +31,11 @@ export const protect = async (req, res, next) => {
         process.env.JWT_SECRET || 'mediscan_super_secret_jwt_key_2026_safe_health_app'
       );
 
-      if (decoded && decoded.id) {
-        if (mongoose.connection.readyState === 1 && mongoose.Types.ObjectId.isValid(decoded.id)) {
-          try {
-            req.user = await User.findById(decoded.id).select('-password');
-          } catch (dbErr) {
-            console.warn('[AUTH MIDDLEWARE DB WARN]', dbErr.message);
-          }
+      if (decoded && decoded.id && mongoose.Types.ObjectId.isValid(decoded.id)) {
+        try {
+          req.user = await User.findById(decoded.id).select('-password');
+        } catch (dbErr) {
+          console.warn('[AUTH MIDDLEWARE DB WARN]', dbErr.message);
         }
       }
 
