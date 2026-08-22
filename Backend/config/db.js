@@ -24,14 +24,18 @@ const connectDB = async () => {
 
   cachedPromise = (async () => {
     let primaryUri = process.env.MONGO_URI || 'mongodb+srv://krbittu803110_db_user:dPU9R7yWn6z813GU@cluster0.j2vupm7.mongodb.net/india';
+    
+    // Set 3.5 sec timeout on Vercel serverless to prevent Vercel 10s Serverless Execution limit timeout (504)
+    const timeoutMs = process.env.VERCEL ? 3500 : 10000;
+
     if (!primaryUri.includes('serverSelectionTimeoutMS')) {
-      primaryUri += (primaryUri.includes('?') ? '&' : '?') + 'serverSelectionTimeoutMS=10000&connectTimeoutMS=10000';
+      primaryUri += (primaryUri.includes('?') ? '&' : '?') + `serverSelectionTimeoutMS=${timeoutMs}&connectTimeoutMS=${timeoutMs}`;
     }
 
     const connectionOpts = {
-      serverSelectionTimeoutMS: 10000,
-      connectTimeoutMS: 10000,
-      socketTimeoutMS: 10000,
+      serverSelectionTimeoutMS: timeoutMs,
+      connectTimeoutMS: timeoutMs,
+      socketTimeoutMS: timeoutMs,
       maxPoolSize: 10,
       minPoolSize: 0
     };
@@ -74,10 +78,16 @@ const connectDB = async () => {
           console.error(`[MEDISCAN DB FALLBACK ERR] ${fallbackErr.message}`);
         }
       }
+      if (process.env.VERCEL) {
+        return null;
+      }
       throw primaryErr;
     }
   })().catch((err) => {
     cachedPromise = null;
+    if (process.env.VERCEL) {
+      return null;
+    }
     throw err;
   });
 

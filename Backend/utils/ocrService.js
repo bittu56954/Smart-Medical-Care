@@ -120,9 +120,10 @@ export const processMedicineImage = async (imageInput, presetKey = null, origina
               logger: () => {}
             });
 
+            const tessTimeout = process.env.VERCEL ? 2500 : 8000;
             const recPromise = worker.recognize(processedPngBuffer);
             const timeoutPromise = new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('OCR process timed out')), 8000)
+              setTimeout(() => reject(new Error('OCR process timed out')), tessTimeout)
             );
 
             const result = await Promise.race([recPromise, timeoutPromise]);

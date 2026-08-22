@@ -45,6 +45,7 @@ app.use('/api', (req, res, next) => {
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.use(cors());
+app.options('*', cors());
 app.use(morgan('dev'));
 
 // Ensure DB connection is active before processing requests
